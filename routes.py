@@ -1,8 +1,7 @@
 # routes.py
 from flask import Blueprint
 from controllers import (
-    AuthController, UserController, StudentController,
-    TeacherController, PDIController
+     PDIController
 )
 
 # Criar blueprint para PDI
@@ -32,10 +31,6 @@ def register_routes(app):
     """Registra todos os blueprints na aplicação"""
     
     # Registrar blueprints existentes
-    app.register_blueprint(AuthController.auth_bp, url_prefix='/api/auth')
-    app.register_blueprint(UserController.user_bp, url_prefix='/api/users')
-    app.register_blueprint(StudentController.student_bp, url_prefix='/api/students')
-    app.register_blueprint(TeacherController.teacher_bp, url_prefix='/api/teachers')
     
     # Registrar blueprint PDI
     app.register_blueprint(pdi_bp, url_prefix='/api')

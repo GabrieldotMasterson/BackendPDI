@@ -1,4 +1,6 @@
-from .user import user_controller
-from .auth import auth_controller
-from .talks import talk_controller
-from .registrations import registration_controller
+# controllers/__init__.py
+from .auth import auth_bp
+from .user import user_bp
+from .PDIController import pdi_bp 
+
+__all__ = ['auth_bp', 'user_bp', 'pdi_bp']

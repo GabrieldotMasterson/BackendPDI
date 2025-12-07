@@ -14,7 +14,6 @@ user_controller = Blueprint("user_controller", __name__, url_prefix="/users")
 
 
 @user_controller.get("/me")
-@api.validate(resp=Response(HTTP_200=UserResponse), tags=["users"])
 @jwt_required()
 def me():
     response = UserResponse.model_validate(current_user).model_dump()
