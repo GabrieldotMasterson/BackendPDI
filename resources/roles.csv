@@ -1,0 +1,4 @@
+name,can_access_sensitive_information,can_manage_users,can_manage_talks,can_create_talks
+admin,True,True,True,True
+user,False,False,False,False
+speaker,True,False,True,True

@@ -1,0 +1,9 @@
+username,password,email,birthdate,role
+Marcos Vinicius,123,null1@gmail,2009-10-22,admin
+Gabriel Tesolin,123,null2@gmail,2010-11-20,admin
+Maria Rita,123,null3@gmail,2008-11-20,admin
+Gabriel Masterson,123,null4@gmail,2009-08-28,admin
+João Pedro,123,null5@gmail,2011-05-15,user
+Ana Clara,123,null6@gmail,2010-12-30,user
+Lucas Silva,123,null7@gmail,2009-03-10,speaker
+Ceiça,123,null8@gmail,2008-07-25,speaker
