@@ -1,35 +1,21 @@
+# config.py
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-basedir = os.path.abspath(os.path.dirname(__file__))
-
-
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "mysecretkey")
-    APP_TITLE = "Doar o Saber API"
+    
+    # SQLite - caminho relativo
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///pdi.db'
+    
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "mysecretkey")
-    JWT_TOKEN_LOCATION = ["headers"]
-
-    @staticmethod
-    def init_app(app):
-        pass
-
-
-class DevelopmentConfig(Config):
-    SQLALCHEMY_DATABASE_URI = "sqlite:///" + os.path.join(basedir, "app.db")
-
-
-class ProductionConfig(Config):
-
-    pass
-    # raw_uri = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL") or ""
-
-    # if raw_uri.startswith("postgres://"):
-    #     raw_uri = raw_uri.replace("postgres://", "postgresql+psycopg://", 1)
-    # elif raw_uri.startswith("postgresql://"):
-    #     raw_uri = raw_uri.replace("postgresql://", "postgresql+psycopg://", 1)
-
-    # SQLALCHEMY_DATABASE_URI = raw_uri
+    JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hora
+    
+    # Opcional: Habilitar WAL para SQLite (melhor performance)
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        'connect_args': {
+            'check_same_thread': False,
+            'timeout': 30
+        }
+    }
