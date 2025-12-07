@@ -148,3 +148,4 @@ class GoalResponse(OrmBase):
     # Contagem de tarefas
     tarefas_concluidas: Optional[int] = 0
     tarefas_totais: Optional[int] = 0
+

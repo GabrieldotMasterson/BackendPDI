@@ -15,9 +15,6 @@ class TaskType(str, Enum):
     REVISAO = "revisao"
 
 
-# ------------------------------
-# Tabela de Tasks
-# ------------------------------
 class Task(db.Model):
     __tablename__ = "pdi_Tasks"
 
