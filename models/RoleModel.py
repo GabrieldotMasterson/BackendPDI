@@ -1,4 +1,4 @@
-from factory import db
+from app import db
 from utils.models import OrmBase
 
 

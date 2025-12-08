@@ -5,7 +5,7 @@ from flask_jwt_extended import jwt_required, current_user
 from sqlalchemy import select
 from spectree import Response
 
-from factory import api, db
+from app import db, api
 from models.UserModel import User, UserCreate, UserEdit, UserResponse, UserResponseList
 from utils.responses import DefaultResponse
 

@@ -1,6 +1,6 @@
 # models/PDI/pdi_model.py
 from datetime import datetime, timezone
-from factory import db
+from app import db
 from .enums import PDIStatus, Prioridade
 
 class PDI(db.Model):

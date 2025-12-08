@@ -2,9 +2,10 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import or_, and_
+from spectree import Response
 import math
 
-from factory import db
+from app import db, api
 from models.UserModel import User
 from models.StudentModel import Student
 from models.PDI import PDI, Meta, Tarefa, Projeto
@@ -18,62 +19,91 @@ from models.PDI.schemas import (
 )
 from datetime import datetime, timezone
 
+# Importar ou definir esquema para respostas de erro
+from pydantic import BaseModel
+
+class ErrorResponse(BaseModel):
+    """Schema para respostas de erro"""
+    error: str
+
+class MessageResponse(BaseModel):
+    """Schema para respostas de mensagem"""
+    message: str
+
 # Cria o blueprint do PDI
-pdi_bp = Blueprint('pdi', __name__)
+pdi_bp = Blueprint('pdi', __name__, url_prefix='/pdi')
 
 # ----------------------------
 # Rotas PDI
 # ----------------------------
 
-@pdi_bp.route('/pdi', methods=['POST'])
+@pdi_bp.route('/', methods=['POST'])
 @jwt_required()
+@api.validate(
+    json=PDICreate,
+    resp=Response(HTTP_201=PDIResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["PDI"]
+)
 def create_pdi():
-    """Cria um novo PDI"""
+    """
+    Criar um novo Plano de Desenvolvimento Individual (PDI)
+    
+    Cria um novo PDI para um estudante com metodologia SMART.
+    Requer autenticação JWT.
+    """
     try:
         current_user_id = get_jwt_identity()
-        data = request.get_json()
-        
-        # Validar dados com Pydantic
-        pdi_data = PDICreate(**data)
+        data = request.context.json
         
         # Verificar se student_id é válido
-        student = Student.query.get(pdi_data.student_id)
+        student = db.session.get(Student, data.student_id)
         if not student:
             return jsonify({"error": "Student not found"}), 404
         
         # Criar PDI
         new_pdi = PDI(
-            title=pdi_data.title,
-            subtitle=pdi_data.subtitle,
-            description=pdi_data.description,
-            goal=pdi_data.goal,
-            student_id=pdi_data.student_id,
-            mentor_id=pdi_data.mentor_id,
-            category=pdi_data.category,
-            nivel=pdi_data.nivel,
-            priority=pdi_data.priority,
-            deadline=pdi_data.deadline,
-            data_inicio=pdi_data.data_inicio,
-            is_specific=pdi_data.is_specific,
-            is_measurable=pdi_data.is_measurable,
-            is_achievable=pdi_data.is_achievable,
-            is_relevant=pdi_data.is_relevant,
-            is_time_bound=pdi_data.is_time_bound
+            title=data.title,
+            subtitle=data.subtitle,
+            description=data.description,
+            goal=data.goal,
+            student_id=data.student_id,
+            mentor_id=data.mentor_id,
+            category=data.category,
+            nivel=data.nivel,
+            priority=data.priority,
+            deadline=data.deadline,
+            data_inicio=data.data_inicio,
+            is_specific=data.is_specific,
+            is_measurable=data.is_measurable,
+            is_achievable=data.is_achievable,
+            is_relevant=data.is_relevant,
+            is_time_bound=data.is_time_bound
         )
         
         db.session.add(new_pdi)
         db.session.commit()
         
-        return jsonify(PDIResponse.from_orm(new_pdi).dict()), 201
+        response = PDIResponse.model_validate(new_pdi).model_dump()
+        return jsonify(response), 201
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi', methods=['GET'])
+
+@pdi_bp.route('/', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=PDIResponseList, HTTP_400=ErrorResponse),
+    tags=["PDI"]
+)
 def get_all_pdis():
-    """Lista todos os PDIs"""
+    """
+    Listar todos os PDIs
+    
+    Retorna uma lista paginada de PDIs.
+    Pode filtrar por status e student_id.
+    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
@@ -100,66 +130,100 @@ def get_all_pdis():
             page=page,
             pages=pages,
             total=total,
-            pdis=[PDIResponse.from_orm(pdi) for pdi in pdis]
-        )
+            pdis=[PDIResponse.model_validate(pdi).model_dump() for pdi in pdis]
+        ).model_dump()
         
-        return jsonify(response.dict()), 200
+        return jsonify(response), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi/<int:pdi_id>', methods=['GET'])
+
+@pdi_bp.route('/<int:pdi_id>', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=PDIResponseCompleto, HTTP_404=ErrorResponse),
+    tags=["PDI"]
+)
 def get_one_pdi(pdi_id):
-    """Obtém um PDI específico"""
+    """
+    Obter um PDI específico
+    
+    Retorna os detalhes completos de um PDI, incluindo metas e projetos.
+    """
     try:
-        pdi = PDI.query.get_or_404(pdi_id)
+        pdi = db.session.get(PDI, pdi_id)
+        if not pdi:
+            return jsonify({"error": f"PDI {pdi_id} not found"}), 404
         
         # Carregar metas e projetos
         metas = Meta.query.filter_by(pdi_id=pdi_id).all()
         projetos = Projeto.query.filter_by(pdi_id=pdi_id).all()
         
-        pdi_response = PDIResponse.from_orm(pdi)
-        response_data = pdi_response.dict()
-        response_data['metas'] = [MetaResponse.from_orm(meta).dict() for meta in metas]
-        response_data['projetos'] = [ProjetoResponse.from_orm(projeto).dict() for projeto in projetos]
+        pdi_response = PDIResponseCompleto(
+            **PDIResponse.model_validate(pdi).model_dump(),
+            metas=[MetaResponse.model_validate(meta).model_dump() for meta in metas],
+            projetos=[ProjetoResponse.model_validate(projeto).model_dump() for projeto in projetos]
+        ).model_dump()
         
-        return jsonify(response_data), 200
+        return jsonify(pdi_response), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi/<int:pdi_id>', methods=['PUT'])
+
+@pdi_bp.route('/<int:pdi_id>', methods=['PUT'])
 @jwt_required()
+@api.validate(
+    json=PDIUpdate,
+    resp=Response(HTTP_200=PDIResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["PDI"]
+)
 def update_pdi(pdi_id):
-    """Atualiza um PDI"""
+    """
+    Atualizar um PDI
+    
+    Atualiza os dados de um PDI existente.
+    """
     try:
-        pdi = PDI.query.get_or_404(pdi_id)
-        data = request.get_json()
+        pdi = db.session.get(PDI, pdi_id)
+        if not pdi:
+            return jsonify({"error": f"PDI {pdi_id} not found"}), 404
         
-        # Validar dados
-        update_data = PDIUpdate(**data)
+        data = request.context.json
         
         # Atualizar campos
-        for field, value in update_data.dict(exclude_unset=True).items():
+        for field, value in data.dict(exclude_unset=True).items():
             if value is not None:
                 setattr(pdi, field, value)
         
         pdi.last_update = datetime.now(timezone.utc)
         db.session.commit()
         
-        return jsonify(PDIResponse.from_orm(pdi).dict()), 200
+        response = PDIResponse.model_validate(pdi).model_dump()
+        return jsonify(response), 200
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi/<int:pdi_id>', methods=['DELETE'])
+
+@pdi_bp.route('/<int:pdi_id>', methods=['DELETE'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=MessageResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["PDI"]
+)
 def delete_pdi(pdi_id):
-    """Deleta um PDI"""
+    """
+    Deletar um PDI
+    
+    Remove permanentemente um PDI e todos os seus dados relacionados.
+    """
     try:
-        pdi = PDI.query.get_or_404(pdi_id)
+        pdi = db.session.get(PDI, pdi_id)
+        if not pdi:
+            return jsonify({"error": f"PDI {pdi_id} not found"}), 404
         
         db.session.delete(pdi)
         db.session.commit()
@@ -170,21 +234,30 @@ def delete_pdi(pdi_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
+
 # ----------------------------
 # Rotas para Metas
 # ----------------------------
 
-@pdi_bp.route('/pdi/<int:pdi_id>/metas', methods=['GET'])
+@pdi_bp.route('/<int:pdi_id>/metas', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=MetaResponse(many=True), HTTP_400=ErrorResponse),
+    tags=["Metas"]
+)
 def get_metas(pdi_id):
-    """Lista metas de um PDI"""
+    """
+    Listar metas de um PDI
+    
+    Retorna todas as metas associadas a um PDI específico.
+    """
     try:
         metas = Meta.query.filter_by(pdi_id=pdi_id).order_by(Meta.ordem).all()
         
         # Adicionar contagem de tarefas
         metas_response = []
         for meta in metas:
-            meta_data = MetaResponse.from_orm(meta).dict()
+            meta_data = MetaResponse.model_validate(meta).model_dump()
             meta_data['tarefas_concluidas'] = len([t for t in meta.tarefas if t.status == "completed"])
             meta_data['tarefas_totais'] = len(meta.tarefas)
             metas_response.append(meta_data)
@@ -194,30 +267,41 @@ def get_metas(pdi_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi/<int:pdi_id>/metas', methods=['POST'])
+
+@pdi_bp.route('/<int:pdi_id>/metas', methods=['POST'])
 @jwt_required()
+@api.validate(
+    json=MetaCreate,
+    resp=Response(HTTP_201=MetaResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["Metas"]
+)
 def create_meta(pdi_id):
-    """Cria uma meta para um PDI"""
+    """
+    Criar uma meta para um PDI
+    
+    Adiciona uma nova meta SMART a um PDI existente.
+    """
     try:
-        pdi = PDI.query.get_or_404(pdi_id)
-        data = request.get_json()
+        pdi = db.session.get(PDI, pdi_id)
+        if not pdi:
+            return jsonify({"error": f"PDI {pdi_id} not found"}), 404
         
-        meta_data = MetaCreate(pdi_id=pdi_id, **data)
+        data = request.context.json
         
         new_meta = Meta(
             pdi_id=pdi_id,
-            title=meta_data.title,
-            description=meta_data.description,
-            specific=meta_data.specific,
-            measurable=meta_data.measurable,
-            achievable=meta_data.achievable,
-            relevant=meta_data.relevant,
-            time_bound=meta_data.time_bound,
-            peso=meta_data.peso,
-            ordem=meta_data.ordem,
-            data_inicio=meta_data.data_inicio,
-            data_fim_previsto=meta_data.data_fim_previsto,
-            evidencia_requisito=meta_data.evidencia_requisito
+            title=data.title,
+            description=data.description,
+            specific=data.specific,
+            measurable=data.measurable,
+            achievable=data.achievable,
+            relevant=data.relevant,
+            time_bound=data.time_bound,
+            peso=data.peso,
+            ordem=data.ordem,
+            data_inicio=data.data_inicio,
+            data_fim_previsto=data.data_fim_previsto,
+            evidencia_requisito=data.evidencia_requisito
         )
         
         db.session.add(new_meta)
@@ -226,11 +310,13 @@ def create_meta(pdi_id):
         # Atualizar progresso do PDI
         pdi.update_progress()
         
-        return jsonify(MetaResponse.from_orm(new_meta).dict()), 201
+        response = MetaResponse.model_validate(new_meta).model_dump()
+        return jsonify(response), 201
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
 
 # ----------------------------
 # Rotas para Tarefas
@@ -238,37 +324,57 @@ def create_meta(pdi_id):
 
 @pdi_bp.route('/metas/<int:meta_id>/tarefas', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=TarefaResponse(many=True), HTTP_400=ErrorResponse),
+    tags=["Tarefas"]
+)
 def get_tarefas(meta_id):
-    """Lista tarefas de uma meta"""
+    """
+    Listar tarefas de uma meta
+    
+    Retorna todas as tarefas associadas a uma meta específica.
+    """
     try:
         tarefas = Tarefa.query.filter_by(meta_id=meta_id).order_by(Tarefa.created_at).all()
         
-        return jsonify([TarefaResponse.from_orm(tarefa).dict() for tarefa in tarefas]), 200
+        response = [TarefaResponse.model_validate(tarefa).model_dump() for tarefa in tarefas]
+        return jsonify(response), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+
 @pdi_bp.route('/metas/<int:meta_id>/tarefas', methods=['POST'])
 @jwt_required()
+@api.validate(
+    json=TarefaCreate,
+    resp=Response(HTTP_201=TarefaResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["Tarefas"]
+)
 def create_tarefa(meta_id):
-    """Cria uma tarefa para uma meta"""
+    """
+    Criar uma tarefa para uma meta
+    
+    Adiciona uma nova tarefa a uma meta existente.
+    """
     try:
-        meta = Meta.query.get_or_404(meta_id)
-        data = request.get_json()
+        meta = db.session.get(Meta, meta_id)
+        if not meta:
+            return jsonify({"error": f"Meta {meta_id} not found"}), 404
         
-        tarefa_data = TarefaCreate(meta_id=meta_id, pdi_id=meta.pdi_id, **data)
+        data = request.context.json
         
         new_tarefa = Tarefa(
             meta_id=meta_id,
             pdi_id=meta.pdi_id,
-            title=tarefa_data.title,
-            description=tarefa_data.description,
-            tipo=tarefa_data.tipo,
-            dificuldade=tarefa_data.dificuldade,
-            pontos=tarefa_data.pontos,
-            tempo_estimado=tarefa_data.tempo_estimado,
-            recurso=tarefa_data.recurso,
-            data_prevista=tarefa_data.data_prevista
+            title=data.title,
+            description=data.description,
+            tipo=data.tipo,
+            dificuldade=data.dificuldade,
+            pontos=data.pontos,
+            tempo_estimado=data.tempo_estimado,
+            recurso=data.recurso,
+            data_prevista=data.data_prevista
         )
         
         db.session.add(new_tarefa)
@@ -277,82 +383,127 @@ def create_tarefa(meta_id):
         # Atualizar progresso da meta e PDI
         meta.update_progress()
         
-        return jsonify(TarefaResponse.from_orm(new_tarefa).dict()), 201
+        response = TarefaResponse.model_validate(new_tarefa).model_dump()
+        return jsonify(response), 201
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
+
 @pdi_bp.route('/tarefas/<int:tarefa_id>/complete', methods=['PUT'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=TarefaResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["Tarefas"]
+)
 def complete_tarefa(tarefa_id):
-    """Marca tarefa como concluída"""
+    """
+    Marcar tarefa como concluída
+    
+    Atualiza o status de uma tarefa para "concluída" e propaga o progresso.
+    """
     try:
-        tarefa = Tarefa.query.get_or_404(tarefa_id)
+        tarefa = db.session.get(Tarefa, tarefa_id)
+        if not tarefa:
+            return jsonify({"error": f"Tarefa {tarefa_id} not found"}), 404
+        
         tarefa.complete()
         
-        return jsonify(TarefaResponse.from_orm(tarefa).dict()), 200
+        response = TarefaResponse.model_validate(tarefa).model_dump()
+        return jsonify(response), 200
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
+
 
 # ----------------------------
 # Rotas para Projetos
 # ----------------------------
 
-@pdi_bp.route('/pdi/<int:pdi_id>/projetos', methods=['GET'])
+@pdi_bp.route('/<int:pdi_id>/projetos', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=ProjetoResponse(many=True), HTTP_400=ErrorResponse),
+    tags=["Projetos"]
+)
 def get_projetos(pdi_id):
-    """Lista projetos de um PDI"""
+    """
+    Listar projetos de um PDI
+    
+    Retorna todos os projetos associados a um PDI específico.
+    """
     try:
         projetos = Projeto.query.filter_by(pdi_id=pdi_id).order_by(Projeto.created_at).all()
         
-        return jsonify([ProjetoResponse.from_orm(projeto).dict() for projeto in projetos]), 200
+        response = [ProjetoResponse.model_validate(projeto).model_dump() for projeto in projetos]
+        return jsonify(response), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi/<int:pdi_id>/projetos', methods=['POST'])
+
+@pdi_bp.route('/<int:pdi_id>/projetos', methods=['POST'])
 @jwt_required()
+@api.validate(
+    json=ProjetoCreate,
+    resp=Response(HTTP_201=ProjetoResponse, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["Projetos"]
+)
 def create_projeto(pdi_id):
-    """Cria um projeto para um PDI"""
+    """
+    Criar um projeto para um PDI
+    
+    Adiciona um novo projeto a um PDI existente.
+    """
     try:
-        pdi = PDI.query.get_or_404(pdi_id)
-        data = request.get_json()
+        pdi = db.session.get(PDI, pdi_id)
+        if not pdi:
+            return jsonify({"error": f"PDI {pdi_id} not found"}), 404
         
-        projeto_data = ProjetoCreate(pdi_id=pdi_id, **data)
+        data = request.context.json
         
         new_projeto = Projeto(
             pdi_id=pdi_id,
-            title=projeto_data.title,
-            description=projeto_data.description,
-            tipo=projeto_data.tipo,
-            dificuldade=projeto_data.dificuldade,
-            horas_estimadas=projeto_data.horas_estimadas,
-            data_inicio=projeto_data.data_inicio,
-            data_fim_previsto=projeto_data.data_fim_previsto,
-            link=projeto_data.link,
-            tecnologias=projeto_data.tecnologias or []
+            title=data.title,
+            description=data.description,
+            tipo=data.tipo,
+            dificuldade=data.dificuldade,
+            horas_estimadas=data.horas_estimadas,
+            data_inicio=data.data_inicio,
+            data_fim_previsto=data.data_fim_previsto,
+            link=data.link,
+            tecnologias=data.tecnologias or []
         )
         
         db.session.add(new_projeto)
         db.session.commit()
         
-        return jsonify(ProjetoResponse.from_orm(new_projeto).dict()), 201
+        response = ProjetoResponse.model_validate(new_projeto).model_dump()
+        return jsonify(response), 201
         
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 400
 
+
 # ----------------------------
 # Rotas adicionais úteis
 # ----------------------------
 
-@pdi_bp.route('/students/<int:student_id>/pdis', methods=['GET'])
+@pdi_bp.route('/students/<int:student_id>', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=PDIResponseList, HTTP_400=ErrorResponse),
+    tags=["PDI"]
+)
 def get_pdis_by_student(student_id):
-    """Lista PDIs de um estudante específico"""
+    """
+    Listar PDIs de um estudante específico
+    
+    Retorna todos os PDIs associados a um estudante.
+    """
     try:
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 10, type=int)
@@ -365,22 +516,30 @@ def get_pdis_by_student(student_id):
             page=pdis.page,
             pages=pdis.pages,
             total=pdis.total,
-            pdis=[PDIResponse.from_orm(pdi) for pdi in pdis.items]
-        )
+            pdis=[PDIResponse.model_validate(pdi).model_dump() for pdi in pdis.items]
+        ).model_dump()
         
-        return jsonify(response.dict()), 200
+        return jsonify(response), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
-@pdi_bp.route('/pdi/me', methods=['GET'])
+
+@pdi_bp.route('/me', methods=['GET'])
 @jwt_required()
+@api.validate(
+    resp=Response(HTTP_200=PDIResponseList, HTTP_404=ErrorResponse, HTTP_400=ErrorResponse),
+    tags=["PDI"]
+)
 def get_my_pdis():
-    """Lista PDIs do usuário atual"""
+    """
+    Listar PDIs do usuário atual
+    
+    Retorna todos os PDIs do estudante associado ao usuário autenticado.
+    """
     try:
         current_user_id = get_jwt_identity()
         
-        # Primeiro encontra o estudante associado ao usuário
         student = Student.query.filter_by(user_id=current_user_id).first()
         if not student:
             return jsonify({"error": "Student profile not found"}), 404
@@ -396,10 +555,10 @@ def get_my_pdis():
             page=pdis.page,
             pages=pdis.pages,
             total=pdis.total,
-            pdis=[PDIResponse.from_orm(pdi) for pdi in pdis.items]
-        )
+            pdis=[PDIResponse.model_validate(pdi).model_dump() for pdi in pdis.items]
+        ).model_dump()
         
-        return jsonify(response.dict()), 200
+        return jsonify(response), 200
         
     except Exception as e:
         return jsonify({"error": str(e)}), 400

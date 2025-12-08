@@ -1,4 +1,5 @@
-from factory import api, db
+from app import db, api
+
 from sqlalchemy import select
 from pydantic import BaseModel
 from spectree import Response

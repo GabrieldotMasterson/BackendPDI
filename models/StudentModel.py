@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from factory import db
+from app import db
 from pydantic import BaseModel
 from typing import Optional
 from utils.models import OrmBase

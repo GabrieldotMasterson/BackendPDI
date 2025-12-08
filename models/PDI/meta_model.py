@@ -1,6 +1,6 @@
 # models/PDI/meta_model.py
 from datetime import datetime, timezone
-from factory import db
+from app import db
 from .enums import MetaStatus
 
 class Meta(db.Model):

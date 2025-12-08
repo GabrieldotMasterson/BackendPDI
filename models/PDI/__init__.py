@@ -1,6 +1,6 @@
 # models/PDI/__init__.py
 # Este arquivo configura os relacionamentos após todos os modelos serem importados
-from factory import db
+from app import db
 from .enums import *
 from .pdi_model import PDI
 from .meta_model import Meta
